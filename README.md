@@ -1,161 +1,237 @@
-# Parole tunisienne : reconnaissance et traduction (TEDxTN)
+<div align="center">
+  <img src="assets/darija-wave.svg" width="100%" alt="DerjaSpeechLab — animated speech waveform" />
 
-Projet commun **GenAI / NLP** : reconnaissance automatique de la parole tunisienne (ASR) et traduction de la
-parole (vers l'anglais, le français et l'arabe standard) sur le corpus **TEDxTN**, avec les deux extensions
-(normalisation, identification dialectale) et une interface web qui montre chaque étape du traitement.
+  # DerjaSpeechLab
 
-- Corpus : [fbougares/TEDxTN](https://huggingface.co/datasets/fbougares/TEDxTN) (CC BY-NC-ND 4.0)
-- Article de référence : Bougares et al., *TEDxTN: A Three-way Speech Translation Corpus for Code-Switched
-  Tunisian Arabic - English*, ArabicNLP 2025 ([PDF](https://aclanthology.org/2025.arabicnlp-main.22.pdf))
+  **Tunisian Arabic ASR · Speech Translation · Text Normalization · Dialect Analysis**
+
+  [![Python](https://img.shields.io/badge/Python-3.10%20%E2%80%93%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+  [![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+  [![Transformers](https://img.shields.io/badge/%F0%9F%A4%97-Transformers-FFD21E)](https://huggingface.co/docs/transformers/)
+  [![Research](https://img.shields.io/badge/status-academic%20research-7C3AED)](#cadre-acad%C3%A9mique-et-%C3%A9thique)
+
+  *من الصوت التونسي إلى نصّ وترجمة قابلة للتحليل*
+
+  Un laboratoire reproductible pour reconnaître la **derja tunisienne**, analyser le **code-switching**
+  arabe–français–anglais et traduire la parole vers l’anglais, le français ou l’arabe standard.
+</div>
 
 ---
 
-## 1. Organisation du dépôt
+## Vue d’ensemble
 
+DerjaSpeechLab étudie la reconnaissance automatique de la parole (ASR) et la traduction de la parole
+tunisienne sur le corpus [TEDxTN](https://huggingface.co/datasets/fbougares/TEDxTN). Le projet compare des
+approches directes et en cascade, puis documente l’effet de la normalisation orthographique, du
+code-switching et des erreurs ASR sur la traduction.
+
+Le dépôt réunit :
+
+- des notebooks reproductibles, de la préparation des données à l’évaluation ;
+- une chaîne ASR basée sur Whisper et des expériences CTC/KenLM ;
+- des systèmes de traduction directe et en cascade avec NLLB ;
+- des modules de normalisation, d’identification dialectale et d’analyse d’erreurs ;
+- une interface Gradio, **Derja Voice Lab**, qui visualise neuf étapes du traitement ;
+- les prédictions, métriques, figures et journaux nécessaires à l’audit des résultats.
+
+> [!IMPORTANT]
+> Les fichiers audio et les modèles entraînés ne sont pas distribués. Ils sont téléchargés ou produits
+> localement dans `workdir/`, conformément aux contraintes de licence et de taille.
+
+## Résultats principaux
+
+Tous les chiffres ci-dessous proviennent du test officiel et des artefacts versionnés dans `results/`.
+Les intervalles de confiance sont calculés par bootstrap à 95 %.
+
+| Tâche | Système | Résultat | Taille du test |
+|---|---|---:|---:|
+| ASR | Whisper-small fine-tuné, beam 5 | **WER 32,06** · CER 15,75 | 842 segments |
+| Traduction en cascade | Whisper-small FT → NLLB LoRA | **BLEU 22,78** · chrF++ 46,59 · COMET 67,03 | 841 segments |
+| Traduction directe | Whisper-small initialisé depuis l’ASR | **BLEU 20,92** · chrF++ 44,70 | 841 segments |
+| Normalisation | ByT5 sur variantes jamais vues | **83,71 %** d’exactitude | dev + test |
+| Type de code-switching audio | classifieur train → test | **F1 macro 0,689** | test officiel |
+
+Les tableaux complets, les limites et le protocole de sélection des modèles sont détaillés dans
+[`RESULTATS.md`](RESULTATS.md). Les incidents expérimentaux et leurs corrections sont consignés dans
+[`CHANGELOG_EXECUTION.md`](CHANGELOG_EXECUTION.md).
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    A[🎙️ Audio tunisien] --> B[Détection et préparation]
+    B --> C[ASR<br/>Whisper / CTC]
+    C --> D[Normalisation<br/>règles / ByT5]
+    D --> E{Traduction}
+    E -->|cascade| F[NLLB / LLM]
+    B -->|directe| G[Whisper AST]
+    F --> H[🇬🇧 EN · 🇫🇷 FR · العربية MSA]
+    G --> H
+    C --> I[Code-switching et dialecte]
+    C --> J[WER · CER]
+    H --> K[BLEU · chrF++ · COMET]
 ```
-tedxtn-tunisian-speech/
-├── README.md
-├── requirements.txt
-├── notebooks/
-│   ├── 01_Tunisian_ASR.ipynb               # obligatoire : ASR
-│   ├── 02_Speech_to_Text_Translation.ipynb # obligatoire : traduction directe vs pipeline
-│   ├── 03_Text_Normalization.ipynb         # extension 1
-│   ├── 04_Dialect_Identification.ipynb     # extension 2
-│   └── 05_Interface_Demo.ipynb             # lance l'interface depuis un notebook
-├── common/                                 # code partagé par les notebooks et l'interface
-│   ├── config.py      chemins, modèles, langues, hyperparamètres
-│   ├── data.py        annotations, audio YouTube, découpage, contrôle des fuites, prédictions
-│   ├── text.py        script, code-switching, CMI, normalisation, comparaison inter-scripts
-│   ├── metrics.py     WER/CER bruts et normalisés, BLEU, chrF++, COMET, bootstrap, analyse d'erreurs
-│   ├── augment.py     augmentation audio (vitesse, bruit, gain)
-│   ├── asr.py         Whisper (complet / LoRA), w2v-BERT-2.0 / MMS (CTC), KenLM
-│   ├── translate.py   NLLB, SeamlessM4T, encodeur parole + décodeur texte
-│   ├── llm.py         post-correction, traduction, normalisation par LLM (GenAI)
-│   └── pipeline.py    pipeline complet avec trace étape par étape
-├── app/app.py                              # interface Gradio « Derja Voice Lab »
-├── scripts/
-│   ├── prepare_data.py                     # annotations + audio + segments en une commande
-│   └── build_kenlm.sh                      # modèle de langage 4-gram (train uniquement)
-├── tests/test_core.py                      # tests sans GPU (format réel des données)
-└── results/                                # tableaux CSV, figures, prédictions (results/preds/)
-```
 
-Les fichiers lourds ne sont **pas** dans le dépôt : audio, segments et modèles vont dans `workdir/`
-(ou `MyDrive/tedxtn` sur Colab, via la variable `TEDXTN_WORKDIR`).
+L’interface expose le signal, le spectrogramme log-Mel, la transcription et sa confiance par token, le
+code-switching, la normalisation, la traduction et le temps de chaque étape.
 
-## 2. Démarrage rapide
+## Démarrage rapide
 
-### Sur Google Colab (recommandé)
-1. Copier ce dossier dans `MyDrive/tedxtn-tunisian-speech` (ou le pousser sur GitHub et adapter `REPO_URL`
-   dans la première cellule de chaque notebook).
-2. Ouvrir un notebook, choisir un GPU (*Exécution > Modifier le type d'exécution*), tout exécuter.
-   La première cellule monte Drive, installe les dépendances et règle `TEDXTN_WORKDIR=/content/drive/MyDrive/tedxtn`.
+### Installation locale
 
-### En local
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # + ffmpeg installé sur le système
-python scripts/prepare_data.py           # télécharge annotations et audio, découpe les segments
-jupyter lab notebooks/
-python app/app.py                        # interface sur http://localhost:7860
-```
-
-## 3. Ordre d'exécution
-
-| Ordre | Notebook | Produit | Utilisé par |
-|---|---|---|---|
-| 1 | `01_Tunisian_ASR` | segments audio, `models/asr_best`, `results/asr_results.csv`, prédictions ASR | 02, 03, 05, interface |
-| 2 | `02_Speech_to_Text_Translation` | `models/ast_best`, `models/mt_best`, `results/ast_results.csv` | 05, interface |
-| 3 | `03_Text_Normalization` | `results/normalization_results.csv`, fiches d'annotation | — |
-| 4 | `04_Dialect_Identification` | `results/dialect_id_results.csv` | — |
-| 5 | `05_Interface_Demo` | lien public vers l'interface | démonstration |
-
-Les notebooks 03 et 04 peuvent tourner en parallèle de 01-02 (03 n'a besoin que des annotations ; il
-réutilise les prédictions ASR si elles existent).
-
-**Reprise et travail en parallèle.** Chaque système enregistre ses sorties dans
-`results/preds/<tâche>__<système>__<split>.csv`. Les sections « Résultats » rassemblent tous les fichiers
-présents : chaque membre de l'équipe peut entraîner un modèle sur son propre compte Colab et déposer ses
-prédictions, puis n'importe qui relance l'évaluation. Les entraînements reprennent automatiquement depuis le
-dernier checkpoint après une coupure de Colab.
-
-Interrupteurs en tête de chaque notebook (`RUN_WHISPER_FT`, `RUN_CTC_FT`, `RUN_LLM`, ...) : ils sont
-désactivés automatiquement sans GPU, ce qui permet de rejouer l'exploration et l'évaluation sur CPU.
-
-## 4. Répartition proposée (4 personnes)
-
-| Personne | Travail | Fichiers |
-|---|---|---|
-| 1 | Données, exploration, baselines zero-shot, README | `01` sections 3-5, `common/data.py`, `scripts/` |
-| 2 | Fine-tuning ASR (Whisper, w2v-BERT + KenLM), analyse d'erreurs, LLM | `01` sections 6-11, `common/asr.py` |
-| 3 | Traduction : direct vs pipeline, NLLB, LLM, COMET | `02`, `common/translate.py`, `common/llm.py` |
-| 4 | Normalisation, identification dialectale, interface, intégration | `03`, `04`, `05`, `app/`, `common/pipeline.py` |
-
-Un notebook = un propriétaire (les `.ipynb` fusionnent mal dans git).
-
-## 5. Récupération de l'audio
-
-La licence interdit de redistribuer l'audio : le papier fournit l'URL YouTube de chaque talk.
-`common/data.py` cherche ces URL dans le dépôt Hugging Face, puis par titre sur YouTube en dernier recours, et
-écrit `workdir/data/youtube_urls.csv`. **Ce fichier est la source de vérité** : les URL marquées
-`ytsearch (À VÉRIFIER)` doivent être contrôlées à la main. Un rapport (`audio_report.csv`) signale tout audio
-plus court que la dernière annotation (mauvaise vidéo probable).
-
-Si YouTube bloque Colab (« confirm you're not a bot ») : exporter les cookies du navigateur au format Netscape
-et définir `YTDLP_COOKIES=/chemin/cookies.txt`, ou lancer `scripts/prepare_data.py` en local puis copier
-`workdir/audio_full/` sur Drive.
-
-## 6. Améliorations implémentées (par rapport au papier)
-
-| Limite | Amélioration | Où |
-|---|---|---|
-| Peu de données (~22 h) | augmentation vitesse/bruit/gain + SpecAugment | `common/augment.py`, `asr.py` |
-| Calcul limité | LoRA (8 bits pour large-v3), fp16, gradient checkpointing, early stopping, reprise | `asr.py`, 01, 02 |
-| Pas de modèle de langage | KenLM 4-gram + beam search, α/β réglés sur le dev | `scripts/build_kenlm.sh`, 01 §7 |
-| Orthographe non standard | WER normalisé + WER script-aware (emprunts dans l'autre script) | `text.py`, `metrics.py` |
-| Code-switching | WER/chrF par type de segment TUN/MIXED/FOR, CMI, mots déclencheurs | 01 §3.4 et §9.1, 02 §9.2 |
-| Dev/test petits | IC à 95 % par bootstrap, test apparié direct vs pipeline | `metrics.py`, 01 §8, 02 §8.1 |
-| Pas de comparaison direct/pipeline | 2 directs + 5 pipelines (dont oracle) sur le même test | 02 |
-| MT sensible aux erreurs ASR | NLLB fine-tuné avec sorties ASR bruitées | 02 §7.1 |
-| BLEU seul | chrF++, COMET-22, analyse manuelle guidée | 02 §8-9 |
-| Échec encodeur + NLLB inexpliqué | diagnostic : adaptateur, gel partiel, décodeur mBART | 02 §7.3 |
-| Volet GenAI | LLM pour post-correction ASR, traduction, normalisation | `llm.py`, 01 §10, 02 §7.2, 03 §5.4 |
-| Langues cibles | français et arabe standard (NLLB, LLM, pivot), évaluation aller-retour | 02 §10, interface |
-
-## 7. L'interface « Derja Voice Lab »
+Pré-requis : Python 3.10 à 3.13, Git, FFmpeg et, pour l’entraînement, un GPU CUDA.
 
 ```bash
-python app/app.py                 # local
-python app/app.py --share         # lien public
-python app/app.py --asr workdir/models/asr_best --mt facebook/nllb-200-distilled-600M
+git clone https://github.com/Nour-Ghribi/DerjaSpeechLab-Tunisian-Arabic-ASR-Speech-Translation.git
+cd DerjaSpeechLab-Tunisian-Arabic-ASR-Speech-Translation
+
+python -m venv .venv
 ```
-ou depuis le notebook `05_Interface_Demo.ipynb`. On enregistre sa voix (ou on charge un fichier), on choisit la
-langue cible (anglais, français, arabe standard) et la méthode (pipeline, directe ou comparaison). L'interface
-affiche, au fur et à mesure, les 9 étapes : signal d'entrée, détection de parole, spectrogramme log-Mel,
-reconnaissance (confiance par token), code-switching, normalisation règle par règle, post-correction LLM
-(option), traduction(s) et temps par étape. L'onglet « Résultats des expériences » affiche les tableaux
-produits par les notebooks.
 
-Si un modèle fine-tuné est absent, l'interface utilise le modèle de base et l'indique clairement dans l'étape
-concernée. Variables utiles : `TEDXTN_ASR_MODEL`, `TEDXTN_AST_MODEL`, `TEDXTN_MT_MODEL`, `TEDXTN_LLM_MODEL`.
+Activation de l’environnement :
 
-## 8. Reproductibilité
+```bash
+# Linux / macOS
+source .venv/bin/activate
 
-- Graine fixe (`SEED = 42`) pour les tirages, l'augmentation et l'entraînement.
-- Splits officiels du papier, vérifiés (effectifs, aucune fuite de talk, de texte ou de segment).
-- Toute décision (checkpoint, paramètres du LM, meilleur système) est prise sur le dev ; le test sert une fois.
-- Versions : voir `requirements.txt` ; `transformers` est borné à `<5` (changements d'API).
-- Tests sans GPU : `python tests/test_core.py`.
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
 
-## 9. Licence et éthique
+Puis :
 
-Les annotations et l'audio de TEDxTN sont sous **CC BY-NC-ND 4.0** : usage non commercial, pas de
-redistribution de l'audio ni de versions modifiées. Par prudence, garder les modèles fine-tunés et les
-prédictions dans un espace privé (Drive, dépôt GitHub ou Hub privé) et ne pas publier l'audio téléchargé.
+```bash
+pip install -r requirements.txt
+python scripts/prepare_data.py
+python tests/test_core.py
+python app/app.py
+```
 
-## 10. Références principales
+L’interface locale est ensuite disponible sur <http://localhost:7860>.
 
-Bougares et al. (2025) TEDxTN · Radford et al. (2022) Whisper · Seamless Communication (2023) w2v-BERT 2.0 et
-SeamlessM4T · Pratap et al. (2023) MMS · NLLB Team (2022) · Hu et al. (2021) LoRA · Park et al. (2019)
-SpecAugment · Heafield (2011) KenLM · Post (2018) sacreBLEU · Popović (2017) chrF++ · Rei et al. (2022) COMET ·
-Zribi et al. (2014) CODA-TUN · Xue et al. (2022) ByT5 · Qwen Team (2024) Qwen2.5.
+### Google Colab
+
+Les notebooks détectent Colab, montent Google Drive et clonent ce dépôt si nécessaire. Ouvrez-les dans
+l’ordre indiqué ci-dessous, choisissez un runtime GPU, puis exécutez toutes les cellules. Les checkpoints et
+les modèles restent dans `MyDrive/tedxtn` grâce à `TEDXTN_WORKDIR`.
+
+## Parcours expérimental
+
+| Ordre | Notebook | Objectif | Sorties principales |
+|---:|---|---|---|
+| 1 | [`01_Tunisian_ASR.ipynb`](notebooks/01_Tunisian_ASR.ipynb) | ASR, baselines, fine-tuning et analyse d’erreurs | modèles ASR, WER/CER, prédictions |
+| 1b | [`01b_w2v-BERT_Colab.ipynb`](notebooks/01b_w2v-BERT_Colab.ipynb) | expérience w2v-BERT / CTC | prédictions CTC |
+| 2 | [`02_Speech_to_Text_Translation.ipynb`](notebooks/02_Speech_to_Text_Translation.ipynb) | traduction directe vs cascade | BLEU, chrF++, COMET |
+| 3 | [`03_Text_Normalization.ipynb`](notebooks/03_Text_Normalization.ipynb) | règles, lexique et ByT5 | ablations et exactitude OOV |
+| 4 | [`04_Dialect_Identification.ipynb`](notebooks/04_Dialect_Identification.ipynb) | région et type de code-switching | accuracy et F1 macro |
+| 5 | [`05_Interface_Demo.ipynb`](notebooks/05_Interface_Demo.ipynb) | démonstration interactive | interface Gradio partageable |
+
+Les notebooks 03 et 04 peuvent être exécutés en parallèle des expériences ASR/AST. Chaque système écrit
+ses sorties dans `results/preds/<tâche>__<système>__<split>.csv`, ce qui permet d’évaluer et de comparer les
+modèles sans relancer leur entraînement.
+
+## Structure du dépôt
+
+```text
+.
+├── app/                 # interface Gradio « Derja Voice Lab »
+├── common/              # données, ASR, traduction, métriques et pipeline partagé
+├── notebooks/           # six notebooks d’expérimentation et de démonstration
+├── results/             # métriques, figures et prédictions reproductibles
+├── scripts/             # préparation, entraînement, monitoring et contrôles
+├── tests/               # tests CPU du cœur du projet
+├── RESULTATS.md         # rapport expérimental complet
+├── CHANGELOG_EXECUTION.md
+└── requirements.txt
+```
+
+### Modules principaux
+
+| Module | Rôle |
+|---|---|
+| `common/data.py` | annotations, récupération audio, segmentation et contrôle des fuites |
+| `common/asr.py` | Whisper, LoRA, CTC, décodage et scores de confiance |
+| `common/translate.py` | NLLB, SeamlessM4T et modèles speech-to-text |
+| `common/text.py` | scripts, code-switching et normalisation tunisienne |
+| `common/metrics.py` | WER/CER, BLEU, chrF++, COMET, bootstrap et analyses |
+| `common/pipeline.py` | orchestration des étapes et traces de l’interface |
+| `common/llm.py` | post-correction, normalisation et traduction assistées par LLM |
+
+## Utiliser Derja Voice Lab
+
+```bash
+# Modèles par défaut ou fallback vers les modèles de base
+python app/app.py
+
+# Créer un lien Gradio public
+python app/app.py --share
+
+# Choisir explicitement les modèles
+python app/app.py \
+  --asr workdir/models/asr_best \
+  --mt facebook/nllb-200-distilled-600M
+```
+
+Variables utiles : `TEDXTN_ASR_MODEL`, `TEDXTN_AST_MODEL`, `TEDXTN_MT_MODEL`, `TEDXTN_LLM_MODEL` et
+`TEDXTN_WORKDIR`.
+
+## Reproductibilité
+
+- graine fixe `SEED = 42` pour les tirages, augmentations et entraînements ;
+- splits officiels avec contrôles des fuites de talk, texte et segment ;
+- sélection des hyperparamètres sur le dev, évaluation finale sur le test ;
+- prédictions et courbes d’entraînement conservées dans `results/` ;
+- intervalles de confiance à 95 % et comparaisons appariées ;
+- tests CPU exécutables avec `python tests/test_core.py` ;
+- dépendances déclarées dans `requirements.txt`, avec `transformers < 5`.
+
+Les modèles sont coûteux à entraîner. Les interrupteurs placés en tête des notebooks
+(`RUN_WHISPER_FT`, `RUN_CTC_FT`, `RUN_LLM`, etc.) désactivent automatiquement les étapes GPU indisponibles et
+permettent de rejouer l’exploration et l’évaluation sur CPU.
+
+## Cadre académique et éthique
+
+Ce dépôt est un projet de recherche et d’apprentissage. Il ne doit pas être interprété comme un système de
+transcription certifié, et ses performances peuvent varier selon la région, l’accent, le microphone, le genre,
+l’âge et le contexte de parole.
+
+Le corpus TEDxTN est distribué sous **CC BY-NC-ND 4.0**. En particulier :
+
+- l’usage est non commercial ;
+- l’audio n’est ni versionné ni redistribué ici ;
+- les URL et segments signalés comme incertains doivent être vérifiés manuellement ;
+- les modèles fine-tunés et données dérivées doivent rester dans un espace autorisé ;
+- toute publication de résultats doit citer le corpus et décrire le protocole.
+
+La licence du corpus ne constitue pas une licence pour le code de ce dépôt. En l’absence de fichier `LICENSE`,
+aucun droit général de réutilisation du code n’est implicitement accordé ; contactez les contributrices avant
+réutilisation ou redistribution.
+
+## Citation
+
+Si ce dépôt vous aide dans un travail académique, vous pouvez le citer ainsi :
+
+```bibtex
+@software{derjaspeechlab_2026,
+  title  = {DerjaSpeechLab: Tunisian Arabic ASR and Speech Translation},
+  author = {Ghribi, Nour and contributors},
+  year   = {2026},
+  url    = {https://github.com/Nour-Ghribi/DerjaSpeechLab-Tunisian-Arabic-ASR-Speech-Translation}
+}
+```
+
+Merci de citer également l’article et le corpus TEDxTN :
+
+> F. Bougares et al. (2025). *TEDxTN: A Three-way Speech Translation Corpus for Code-Switched Tunisian
+> Arabic–English*. ArabicNLP 2025. [Article ACL Anthology](https://aclanthology.org/2025.arabicnlp-main.22/)
+
+## Références techniques
+
+Whisper · w2v-BERT 2.0 · MMS · SeamlessM4T · NLLB · LoRA · SpecAugment · KenLM · sacreBLEU · chrF++ ·
+COMET · CODA-TUN · ByT5. Les références détaillées et leur rôle expérimental figurent dans les notebooks.
+
+---
+
+<div align="center">
+  <sub>Built for Tunisian Arabic speech research — بالصوت التونسي، للبحث المفتوح والمسؤول 🇹🇳</sub>
+</div>

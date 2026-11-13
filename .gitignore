@@ -17,3 +17,7 @@ __pycache__/
 .venv/
 .gradio/
 flagged/
+
+# Archives et dossiers locaux d'import (jamais versionnés)
+/*.zip
+/_archive_review/
